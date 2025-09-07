@@ -21,8 +21,6 @@ type PrivateData interface {
 
 type EphemeralBodyPrivateMgr struct{}
 
-var ephemeralBodyPrivateMgr = EphemeralBodyPrivateMgr{}
-
 func (m EphemeralBodyPrivateMgr) Exists(ctx context.Context, d PrivateData) (bool, diag.Diagnostics) {
 	b, diags := d.GetKey(ctx, pkEphemeralBody)
 	if diags.HasError() {
