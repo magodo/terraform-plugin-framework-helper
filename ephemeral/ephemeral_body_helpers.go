@@ -1,7 +1,6 @@
 package ephemeral
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -43,28 +42,4 @@ func ValidateEphemeralBody(body []byte, ephemeralBody types.Dynamic) ([]byte, di
 		return nil, diags
 	}
 	return eb, nil
-}
-
-// EphemeralBodyChangeInPlan checks if the ephemeral_body has changed in the plan modify phase.
-func EphemeralBodyChangeInPlan(ctx context.Context, d PrivateData, ephemeralBody types.Dynamic) (ok bool, diags diag.Diagnostics) {
-	// 1. ephemeral_body is null
-	if ephemeralBody.IsNull() {
-		return ephemeralBodyPrivateMgr.Diff(ctx, d, nil)
-	}
-
-	// 2. ephemeral_body is unknown (e.g. referencing an knonw-after-apply value)
-	if ephemeralBody.IsUnknown() {
-		return true, nil
-	}
-
-	// 3. ephemeral_body is known in the config, but has different hash than the private data
-	eb, err := dynamic.ToJSON(ephemeralBody)
-	if err != nil {
-		diags.AddError(
-			`Error to marshal "ephemeral_body"`,
-			err.Error(),
-		)
-		return
-	}
-	return ephemeralBodyPrivateMgr.Diff(ctx, d, eb)
 }
