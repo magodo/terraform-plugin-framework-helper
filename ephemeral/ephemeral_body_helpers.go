@@ -10,9 +10,9 @@ import (
 	"github.com/magodo/terraform-plugin-framework-helper/jsonset"
 )
 
-// validateEphemeralBody validates a known, non-null ephemeral_body doesn't joint with the body.
+// ValidateEphemeralBody validates a known, non-null ephemeral_body doesn't joint with the body.
 // It returns the json representation of the ephemeral body as well (if known, non-null).
-func validateEphemeralBody(body []byte, ephemeralBody types.Dynamic) ([]byte, diag.Diagnostics) {
+func ValidateEphemeralBody(body []byte, ephemeralBody types.Dynamic) ([]byte, diag.Diagnostics) {
 	if ephemeralBody.IsUnknown() || ephemeralBody.IsNull() {
 		return nil, nil
 	}
@@ -45,8 +45,8 @@ func validateEphemeralBody(body []byte, ephemeralBody types.Dynamic) ([]byte, di
 	return eb, nil
 }
 
-// ephemeralBodyChangeInPlan checks if the ephemeral_body has changed in the plan modify phase.
-func ephemeralBodyChangeInPlan(ctx context.Context, d PrivateData, ephemeralBody types.Dynamic) (ok bool, diags diag.Diagnostics) {
+// EphemeralBodyChangeInPlan checks if the ephemeral_body has changed in the plan modify phase.
+func EphemeralBodyChangeInPlan(ctx context.Context, d PrivateData, ephemeralBody types.Dynamic) (ok bool, diags diag.Diagnostics) {
 	// 1. ephemeral_body is null
 	if ephemeralBody.IsNull() {
 		return ephemeralBodyPrivateMgr.Diff(ctx, d, nil)
