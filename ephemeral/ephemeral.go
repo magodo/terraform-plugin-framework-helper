@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -21,9 +22,7 @@ type PrivateData interface {
 	SetKey(ctx context.Context, key string, value []byte) diag.Diagnostics
 }
 
-type EphemeralBodyPrivateMgr struct{}
-
-func (m EphemeralBodyPrivateMgr) Exists(ctx context.Context, d PrivateData) (bool, diag.Diagnostics) {
+func Exists(ctx context.Context, d PrivateData) (bool, diag.Diagnostics) {
 	b, diags := d.GetKey(ctx, pkEphemeralBody)
 	if diags.HasError() {
 		return false, diags
@@ -33,7 +32,7 @@ func (m EphemeralBodyPrivateMgr) Exists(ctx context.Context, d PrivateData) (boo
 
 // Set sets the hash of the ephemeral_body to the private state.
 // If `ebody` is nil, it removes the hash from the private state.
-func (m EphemeralBodyPrivateMgr) Set(ctx context.Context, d PrivateData, ebody []byte) (diags diag.Diagnostics) {
+func Set(ctx context.Context, d PrivateData, ebody []byte) (diags diag.Diagnostics) {
 	if ebody == nil {
 		d.SetKey(ctx, pkEphemeralBody, nil)
 		return
@@ -79,7 +78,7 @@ func (m EphemeralBodyPrivateMgr) Set(ctx context.Context, d PrivateData, ebody [
 // Diff tells whether the ephemeral_body is different than the hash stored in the private state.
 // In case private state doesn't have the record, regard the record as "nil" (i.e. will return true if ebody is non-nil).
 // In case private state has the record (guaranteed to be non-nil), while ebody is nil, it also returns true.
-func (m EphemeralBodyPrivateMgr) Diff(ctx context.Context, d PrivateData, ebody []byte) (bool, diag.Diagnostics) {
+func Diff(ctx context.Context, d PrivateData, ebody []byte) (bool, diag.Diagnostics) {
 	b, diags := d.GetKey(ctx, pkEphemeralBody)
 	if diags.HasError() {
 		return false, diags
@@ -122,7 +121,7 @@ func (m EphemeralBodyPrivateMgr) Diff(ctx context.Context, d PrivateData, ebody 
 
 // GetNullBody gets the nullified ephemeral_body from the private data.
 // If it doesn't exist, nil is returned.
-func (m EphemeralBodyPrivateMgr) GetNullBody(ctx context.Context, d PrivateData) ([]byte, diag.Diagnostics) {
+func GetNullBody(ctx context.Context, d PrivateData) ([]byte, diag.Diagnostics) {
 	b, diags := d.GetKey(ctx, pkEphemeralBody)
 	if diags.HasError() {
 		return nil, diags
@@ -154,11 +153,11 @@ func (m EphemeralBodyPrivateMgr) GetNullBody(ctx context.Context, d PrivateData)
 	return b, nil
 }
 
-// EphemeralBodyChangeInPlan checks if the ephemeral_body has changed in the plan modify phase.
-func (m EphemeralBodyPrivateMgr) ChangeInPlan(ctx context.Context, d PrivateData, ephemeralBody types.Dynamic) (ok bool, diags diag.Diagnostics) {
+// ChangeInPlan checks if the ephemeral_body has changed in the plan modify phase.
+func ChangeInPlan(ctx context.Context, d PrivateData, ephemeralBody types.Dynamic) (ok bool, diags diag.Diagnostics) {
 	// 1. ephemeral_body is null
 	if ephemeralBody.IsNull() {
-		return m.Diff(ctx, d, nil)
+		return Diff(ctx, d, nil)
 	}
 
 	// 2. ephemeral_body is unknown (e.g. referencing an knonw-after-apply value)
@@ -175,5 +174,40 @@ func (m EphemeralBodyPrivateMgr) ChangeInPlan(ctx context.Context, d PrivateData
 		)
 		return
 	}
-	return m.Diff(ctx, d, eb)
+	return Diff(ctx, d, eb)
+}
+
+// ValidateEphemeralBody validates a known, non-null ephemeral_body doesn't joint with the body.
+// It returns the json representation of the ephemeral body as well (if known, non-null).
+func ValidateEphemeralBody(body []byte, ephemeralBody types.Dynamic) ([]byte, diag.Diagnostics) {
+	if ephemeralBody.IsUnknown() || ephemeralBody.IsNull() {
+		return nil, nil
+	}
+
+	var diags diag.Diagnostics
+
+	eb, err := dynamic.ToJSON(ephemeralBody)
+	if err != nil {
+		diags.AddError(
+			"Invalid configuration",
+			fmt.Sprintf(`marshal "ephemeral_body": %v`, err),
+		)
+		return nil, diags
+	}
+	disjointed, err := jsonset.Disjointed(body, eb)
+	if err != nil {
+		diags.AddError(
+			"Invalid configuration",
+			fmt.Sprintf(`checking disjoint of "body" and "ephemeral_body": %v`, err),
+		)
+		return nil, diags
+	}
+	if !disjointed {
+		diags.AddError(
+			"Invalid configuration",
+			`"body" and "ephemeral_body" are not disjointed`,
+		)
+		return nil, diags
+	}
+	return eb, nil
 }
