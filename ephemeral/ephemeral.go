@@ -91,6 +91,10 @@ func Diff(ctx context.Context, d PrivateData, ephemeralBody types.Dynamic) (bool
 		return !ephemeralBody.IsNull(), diags
 	}
 
+	if ephemeralBody.IsNull() {
+		return true, diags
+	}
+
 	// Calc the hash in the private data
 	var mm map[string]interface{}
 	if err := json.Unmarshal(b, &mm); err != nil {
