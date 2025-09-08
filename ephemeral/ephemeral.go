@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -30,7 +29,7 @@ func Exists(ctx context.Context, d PrivateData) (bool, diag.Diagnostics) {
 	return b != nil, diags
 }
 
-// Set sets the hash of the ephemeral_body to the private state.
+// Set sets the hash of the ephemeral body to the private state.
 // If `ebody` is nil, it removes the hash from the private state.
 func Set(ctx context.Context, d PrivateData, ebody []byte) (diags diag.Diagnostics) {
 	if ebody == nil {
@@ -42,7 +41,7 @@ func Set(ctx context.Context, d PrivateData, ebody []byte) (diags diag.Diagnosti
 	h := sha256.New()
 	if _, err := h.Write(ebody); err != nil {
 		diags.AddError(
-			`Error to hash "ephemeral_body"`,
+			`Error to hash the ephemeral body`,
 			err.Error(),
 		)
 		return
@@ -53,7 +52,7 @@ func Set(ctx context.Context, d PrivateData, ebody []byte) (diags diag.Diagnosti
 	nb, err := jsonset.NullifyObject(ebody)
 	if err != nil {
 		diags.AddError(
-			`Error to nullify "ephemeral_body"`,
+			`Error to nullify the ephemeral body`,
 			err.Error(),
 		)
 		return
@@ -66,7 +65,7 @@ func Set(ctx context.Context, d PrivateData, ebody []byte) (diags diag.Diagnosti
 	})
 	if err != nil {
 		diags.AddError(
-			`Error to marshal "ephemeral_body" private data`,
+			`Error to marshal the ephemeral body private data`,
 			err.Error(),
 		)
 		return
@@ -75,22 +74,28 @@ func Set(ctx context.Context, d PrivateData, ebody []byte) (diags diag.Diagnosti
 	return d.SetKey(ctx, pkEphemeralBody, b)
 }
 
-// Diff tells whether the ephemeral_body is different than the hash stored in the private state.
+// Diff tells whether the ephemeral body is different than the hash stored in the private state.
 // In case private state doesn't have the record, regard the record as "nil" (i.e. will return true if ebody is non-nil).
 // In case private state has the record (guaranteed to be non-nil), while ebody is nil, it also returns true.
-func Diff(ctx context.Context, d PrivateData, ebody []byte) (bool, diag.Diagnostics) {
+func Diff(ctx context.Context, d PrivateData, ephemeralBody types.Dynamic) (bool, diag.Diagnostics) {
+	if ephemeralBody.IsUnknown() {
+		return true, nil
+	}
+
 	b, diags := d.GetKey(ctx, pkEphemeralBody)
 	if diags.HasError() {
 		return false, diags
 	}
 	if b == nil {
 		// In case private state doesn't store the key yet, it only diffs when the ebody is not nil.
-		return ebody != nil, diags
+		return !ephemeralBody.IsNull(), diags
 	}
+
+	// Calc the hash in the private data
 	var mm map[string]interface{}
 	if err := json.Unmarshal(b, &mm); err != nil {
 		diags.AddError(
-			`Error to unmarshal "ephemeral_body" private data`,
+			`Error to unmarshal the ephemeral body private data`,
 			err.Error(),
 		)
 		return false, diags
@@ -98,28 +103,36 @@ func Diff(ctx context.Context, d PrivateData, ebody []byte) (bool, diag.Diagnost
 	privateHashEnc, ok := mm["hash"]
 	if !ok {
 		diags.AddError(
-			`Invalid "ephemeral_body" private data`,
+			`Invalid ephemeral body private data`,
 			`Key "hash" not found`,
 		)
 		return false, diags
 	}
 
+	// Calc the hash of the ebody
+	ebody, err := dynamic.ToJSON(ephemeralBody)
+	if err != nil {
+		diags.AddError(
+			`Error to marshal the ephemeral body`,
+			err.Error(),
+		)
+		return false, diags
+	}
 	h := sha256.New()
 	if _, err := h.Write(ebody); err != nil {
 		diags.AddError(
-			`Error to hash "ephemeral_body"`,
+			`Error to hash ephemeral body`,
 			err.Error(),
 		)
 		return false, diags
 	}
 	hash := h.Sum(nil)
-
 	hashEnc := base64.StdEncoding.EncodeToString(hash)
 
 	return hashEnc != privateHashEnc.(string), diags
 }
 
-// GetNullBody gets the nullified ephemeral_body from the private data.
+// GetNullBody gets the nullified ephemeral body from the private data.
 // If it doesn't exist, nil is returned.
 func GetNullBody(ctx context.Context, d PrivateData) ([]byte, diag.Diagnostics) {
 	b, diags := d.GetKey(ctx, pkEphemeralBody)
@@ -133,7 +146,7 @@ func GetNullBody(ctx context.Context, d PrivateData) ([]byte, diag.Diagnostics) 
 	var mm map[string]interface{}
 	if err := json.Unmarshal(b, &mm); err != nil {
 		diags.AddError(
-			`Error to unmarshal "ephemeral_body" private data`,
+			`Error to unmarshal the ephemeral body private data`,
 			err.Error(),
 		)
 		return nil, diags
@@ -145,7 +158,7 @@ func GetNullBody(ctx context.Context, d PrivateData) ([]byte, diag.Diagnostics) 
 	b, err := base64.StdEncoding.DecodeString(bEnc.(string))
 	if err != nil {
 		diags.AddError(
-			`Error base64 decoding the nullified "ephemeral_body" in the private data`,
+			`Error base64 decoding the nullified the ephemeral body in the private data`,
 			err.Error(),
 		)
 		return nil, diags
@@ -153,31 +166,7 @@ func GetNullBody(ctx context.Context, d PrivateData) ([]byte, diag.Diagnostics) 
 	return b, nil
 }
 
-// ChangeInPlan checks if the ephemeral_body has changed in the plan modify phase.
-func ChangeInPlan(ctx context.Context, d PrivateData, ephemeralBody types.Dynamic) (ok bool, diags diag.Diagnostics) {
-	// 1. ephemeral_body is null
-	if ephemeralBody.IsNull() {
-		return Diff(ctx, d, nil)
-	}
-
-	// 2. ephemeral_body is unknown (e.g. referencing an knonw-after-apply value)
-	if ephemeralBody.IsUnknown() {
-		return true, nil
-	}
-
-	// 3. ephemeral_body is known in the config, check whether it has a different hash than the private data
-	eb, err := dynamic.ToJSON(ephemeralBody)
-	if err != nil {
-		diags.AddError(
-			`Error to marshal "ephemeral_body"`,
-			err.Error(),
-		)
-		return
-	}
-	return Diff(ctx, d, eb)
-}
-
-// ValidateEphemeralBody validates a known, non-null ephemeral_body doesn't joint with the body.
+// ValidateEphemeralBody validates a known, non-null ephemeral body doesn't joint with the body.
 // It returns the json representation of the ephemeral body as well (if known, non-null).
 func ValidateEphemeralBody(body []byte, ephemeralBody types.Dynamic) ([]byte, diag.Diagnostics) {
 	if ephemeralBody.IsUnknown() || ephemeralBody.IsNull() {
@@ -189,23 +178,23 @@ func ValidateEphemeralBody(body []byte, ephemeralBody types.Dynamic) ([]byte, di
 	eb, err := dynamic.ToJSON(ephemeralBody)
 	if err != nil {
 		diags.AddError(
-			"Invalid configuration",
-			fmt.Sprintf(`marshal "ephemeral_body": %v`, err),
+			"failed to marshal ephemeral body",
+			err.Error(),
 		)
 		return nil, diags
 	}
 	disjointed, err := jsonset.Disjointed(body, eb)
 	if err != nil {
 		diags.AddError(
-			"Invalid configuration",
-			fmt.Sprintf(`checking disjoint of "body" and "ephemeral_body": %v`, err),
+			"failed to check disjoint of the body and the ephemeral body",
+			err.Error(),
 		)
 		return nil, diags
 	}
 	if !disjointed {
 		diags.AddError(
-			"Invalid configuration",
-			`"body" and "ephemeral_body" are not disjointed`,
+			"the body and the ephemeral body are not disjointed",
+			"",
 		)
 		return nil, diags
 	}
