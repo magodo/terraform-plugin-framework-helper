@@ -84,6 +84,7 @@ func TestToJSON(t *testing.T) {
 				},
 				"dynamic_unknwon": basetypes.DynamicType{},
 				"dynamic_null":    basetypes.DynamicType{},
+				"dynamic_string":  basetypes.DynamicType{},
 			},
 			map[string]attr.Value{
 				"bool":         types.BoolValue(true),
@@ -173,6 +174,7 @@ func TestToJSON(t *testing.T) {
 				),
 				"dynamic_unknwon": types.DynamicUnknown(),
 				"dynamic_null":    types.DynamicNull(),
+				"dynamic_string":  types.DynamicValue(types.StringValue("foo")),
 			},
 		),
 	)
@@ -210,7 +212,8 @@ func TestToJSON(t *testing.T) {
 	"object_empty": {},
 	"object_null": null,
 	"dynamic_unknwon": null,
-	"dynamic_null": null
+	"dynamic_null": null,
+	"dynamic_string": "foo"
 }`
 
 	b, err := ToJSON(input)
